@@ -3,9 +3,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from nltk.corpus import stopwords
 import string
+
+from pydantic.experimental import pipeline
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report
@@ -28,21 +31,39 @@ sns.countplot(yelp, x="stars")
 # plt.show()
 
 yelp_gr = yelp.groupby("stars")[["cool", "useful", "funny", "text length"]]
-print("\nYelp grouped by stars:", yelp_gr.mean())
+print("\nYelp grouped by stars - average values:\n", yelp_gr.mean())
 
 yelp_corr = yelp_gr.mean().corr()
-print("\nYelp correlation matrix:", yelp_corr)
+print("\nYelp correlation matrix:\n", yelp_corr)
 
 sns.heatmap(yelp_corr)
-plt.show()
+# plt.show()
 
 # ***** NLP Classification ***** #
-# Create a dataframe called yelp_class that contains the columns of yelp dataframe but for only
-# the 1 or 5 star reviews.**
+yelp_class = yelp[(yelp.stars == 1) | (yelp.stars == 5)].copy()
+# yelp_class["text"] = yelp_class["text"].apply(text_process)
+print("\nYelp_class text:\n", yelp_class["text"].head(5))
 
-# yelp_class = yelp_gr("1","2")
-# print("\nYelp class:", yelp_class)
+X = yelp_class['text']
+y = yelp_class['stars']
 
+# Count Vectorizer create a matrix of words for the whole set of reviews
+vectorizer = CountVectorizer()
+X = vectorizer.fit_transform(X)
+# print("\nVectorized text data:\n", X)
+
+# ***** Training the dataset ***** #
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=101)
+
+# Naive Bayes Classifier
+nb = MultinomialNB()
+fit = nb.fit(X_train, y_train)
+predictions = nb.predict(X_test)
+
+print("\nClassification report for Naive Bayesian Classifier:\n", classification_report(y_test, predictions))
+
+
+# ***** Text Processing ***** #
 def text_process(message):
     """
     Takes in a string of text, then performs the following:
@@ -60,23 +81,23 @@ def text_process(message):
     return [word for word in nopunc.split() if word.lower() not in stopwords.words("english")]
 
 
-yelp_class = yelp[(yelp.stars==1) | (yelp.stars==5)].copy()
-# yelp_class["text"] = yelp_class["text"].apply(text_process)
-print("\nyelp_class text:\n", yelp_class["text"].head(5))
+svm_classifier = SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42)
+
+pipeline = Pipeline([
+    ('bow', CountVectorizer()),  # strings to token integer counts
+    ('tfidf', TfidfTransformer()),  # integer counts to weighted TF-IDF scores
+    ('classifier', svm_classifier),  # train on TF-IDF vectors w/ Naive Bayes classifier
+])
 
 X = yelp_class['text']
 y = yelp_class['stars']
 
-# Count Vectorizer create a matrix of words for the whole set of reviews
-vectorizer = CountVectorizer()
-X = vectorizer.fit_transform(X)
-
 # ***** Training the dataset ***** #
-X_train, X_test, y_train, y_test = train_test_split(yelp_class["text"], yelp_class["stars"], test_size=0.3, random_state=101)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=101)
 
-# Naive Bayes Classifier
-nb = MultinomialNB()
-fit = nb.fit(X_train, y_train)
-predictions = nb.predict(X_test)
-
-print("\nClassification report for Naive Bayesian Classifier:\n", classification_report(y_test, predictions))
+# using pipeline to train model
+pipeline.fit(X_train, y_train)
+predictions = pipeline.predict(X_test)
+print(
+    "\nClassification report for Support Vector Classification (Radial Basis Function (RBF) kernel)  - version 2 with pipeline:\n",
+    classification_report(y_test, predictions))
